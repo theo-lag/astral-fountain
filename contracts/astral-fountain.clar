@@ -94,3 +94,62 @@
     false
   )
 )
+
+(define-private (update-participant-record
+    (user principal)
+    (claimed-amount uint)
+  )
+  (match (map-get? participants user)
+    current-info (ok (map-set participants user
+      (merge current-info {
+        last-claim-height: stacks-block-height,
+        total-claimed: (+ (get total-claimed current-info) claimed-amount),
+        claims-count: (+ (get claims-count current-info) u1),
+      })
+    ))
+    err-not-registered
+  )
+)
+
+(define-private (is-valid-proposal-type (proposal-type (string-ascii 32)))
+  (or
+    (is-eq proposal-type "distribution-amount")
+    (is-eq proposal-type "distribution-interval")
+    (is-eq proposal-type "minimum-balance")
+  )
+)
+
+(define-private (is-valid-proposed-value (value uint))
+  (and
+    (> value u0)
+    (<= value max-proposed-value)
+  )
+)
+
+;; Public Functions
+(define-public (register)
+  (let ((existing-record (map-get? participants tx-sender)))
+    (asserts! (is-none existing-record) err-already-registered)
+    (map-set participants tx-sender {
+      registered: true,
+      last-claim-height: u0,
+      total-claimed: u0,
+      verification-status: false,
+      join-height: stacks-block-height,
+      claims-count: u0,
+    })
+    (var-set total-participants (+ (var-get total-participants) u1))
+    (ok true)
+  )
+)
+
+(define-public (verify-participant (user principal))
+  (begin
+    (asserts! (is-contract-owner) err-owner-only)
+    (asserts! (is-some (map-get? participants user)) err-not-registered)
+    (map-set participants user
+      (merge (unwrap! (map-get? participants user) err-not-registered) { verification-status: true })
+    )
+    (ok true)
+  )
+)
