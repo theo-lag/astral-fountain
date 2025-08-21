@@ -153,3 +153,93 @@
     (ok true)
   )
 )
+
+(define-public (claim-ubi)
+  (let (
+      (user tx-sender)
+      (can-claim (is-eligible user))
+    )
+    (asserts! (not (var-get paused)) err-unauthorized)
+    (asserts! can-claim err-ineligible)
+    (asserts! (>= (var-get treasury-balance) (var-get distribution-amount))
+      err-insufficient-funds
+    )
+
+    ;; Process claim
+    (try! (as-contract (stx-transfer? (var-get distribution-amount) contract-caller user)))
+    (var-set treasury-balance
+      (- (var-get treasury-balance) (var-get distribution-amount))
+    )
+    (try! (update-participant-record user (var-get distribution-amount)))
+    (ok (var-get distribution-amount))
+  )
+)
+
+(define-public (contribute)
+  (let ((amount (stx-get-balance tx-sender)))
+    (asserts! (> amount u0) err-invalid-amount)
+    (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+    (var-set treasury-balance (+ (var-get treasury-balance) amount))
+    (ok amount)
+  )
+)
+
+;; Governance Functions
+(define-public (submit-proposal
+    (proposal-type (string-ascii 32))
+    (proposed-value uint)
+  )
+  (let ((new-proposal-id (+ (var-get proposal-counter) u1)))
+    (asserts! (is-some (map-get? participants tx-sender)) err-not-registered)
+    (asserts! (is-valid-proposal-type proposal-type) err-invalid-proposal)
+    (asserts! (is-valid-proposed-value proposed-value) err-invalid-value)
+
+    (map-set governance-proposals new-proposal-id {
+      proposer: tx-sender,
+      proposal-type: proposal-type,
+      proposed-value: proposed-value,
+      votes-for: u0,
+      votes-against: u0,
+      status: "active",
+      expiry-height: (+ stacks-block-height u1440),
+    })
+    (var-set proposal-counter new-proposal-id)
+    (ok new-proposal-id)
+  )
+)
+
+(define-public (vote
+    (proposal-id uint)
+    (vote-for bool)
+  )
+  (let (
+      (proposal (unwrap! (map-get? governance-proposals proposal-id) err-not-registered))
+      (voter-key {
+        proposal-id: proposal-id,
+        voter: tx-sender,
+      })
+    )
+    (asserts! (is-some (map-get? participants tx-sender)) err-not-registered)
+    (asserts! (is-none (map-get? voter-records voter-key)) err-already-registered)
+    (asserts! (<= proposal-id (var-get proposal-counter)) err-invalid-proposal)
+    (asserts! (< stacks-block-height (get expiry-height proposal))
+      err-expired-proposal
+    )
+    (asserts! (is-eq (get status proposal) "active") err-invalid-proposal)
+
+    (map-set voter-records voter-key true)
+    (map-set governance-proposals proposal-id
+      (merge proposal {
+        votes-for: (if vote-for
+          (+ (get votes-for proposal) u1)
+          (get votes-for proposal)
+        ),
+        votes-against: (if vote-for
+          (get votes-against proposal)
+          (+ (get votes-against proposal) u1)
+        ),
+      })
+    )
+    (ok true)
+  )
+)
