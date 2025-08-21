@@ -243,3 +243,42 @@
     (ok true)
   )
 )
+
+;; Emergency Functions
+(define-public (pause)
+  (begin
+    (asserts! (is-contract-owner) err-owner-only)
+    (var-set paused true)
+    (ok true)
+  )
+)
+
+(define-public (unpause)
+  (begin
+    (asserts! (is-contract-owner) err-owner-only)
+    (var-set paused false)
+    (ok true)
+  )
+)
+
+;; Getter Functions
+(define-read-only (get-participant-info (user principal))
+  (map-get? participants user)
+)
+
+(define-read-only (get-treasury-balance)
+  (var-get treasury-balance)
+)
+
+(define-read-only (get-proposal (proposal-id uint))
+  (map-get? governance-proposals proposal-id)
+)
+
+(define-read-only (get-distribution-info)
+  {
+    amount: (var-get distribution-amount),
+    interval: distribution-interval,
+    last-height: (var-get last-distribution-height),
+    minimum-balance: minimum-balance,
+  }
+)
